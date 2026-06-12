@@ -171,6 +171,12 @@ main {
 .btn-sm.danger { color: var(--danger); }
 .btn-sm.confirm-state { background: var(--danger); color: #fff; }
 
+.backup-card { margin-top: 16px; }
+.backup-title { font-weight: 700; font-size: 1rem; margin-bottom: 6px; }
+.backup-desc { font-size: 0.82rem; color: var(--text-sub); line-height: 1.6; margin-bottom: 14px; }
+.backup-btns { display: flex; gap: 8px; }
+.backup-btns .btn-sm { flex: 1; padding: 12px; text-align: center; }
+
 .btn-primary {
   display: block;
   width: 100%;

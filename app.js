@@ -247,7 +247,20 @@ function renderMeds() {
       </div>`;
   }
 
-  view.innerHTML = html + `<button class="btn-primary" data-action="add">＋ 약 추가</button>`;
+  view.innerHTML = html
+    + `<button class="btn-primary" data-action="add">＋ 약 추가</button>`
+    + `<div class="card backup-card">
+         <div class="backup-title">데이터 백업</div>
+         <div class="backup-desc">
+           복약 기록은 이 기기에만 저장됩니다. 가끔 백업 파일을 만들어
+           <b>iCloud Drive(파일 앱)</b>에 저장해 두면, 기기를 바꾸거나
+           실수로 데이터가 지워져도 안전하게 복원할 수 있어요.
+         </div>
+         <div class="backup-btns">
+           <button class="btn-sm" data-action="export-data">⬆️ 백업 내보내기</button>
+           <button class="btn-sm" data-action="import-data">⬇️ 백업 가져오기</button>
+         </div>
+       </div>`;
 }
 
 /* ── 렌더링: 기록 탭 ───────────────── */
@@ -461,6 +474,71 @@ function handleDelete(medId, btn) {
   };
 }
 
+/* ── 백업 내보내기 / 가져오기 ───────── */
+async function exportData() {
+  const json = JSON.stringify(state, null, 2);
+  const filename = `복약백업-${dateKey(new Date())}.json`;
+  const blob = new Blob([json], { type: 'application/json' });
+
+  // iOS에서는 공유 시트(→ "파일에 저장" → iCloud Drive)가 가장 안정적
+  if (navigator.canShare) {
+    const file = new File([blob], filename, { type: 'application/json' });
+    if (navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: '복약 백업' });
+        return;
+      } catch (e) {
+        if (e && e.name === 'AbortError') return; // 사용자가 취소
+        // 공유 실패 시 아래 다운로드로 폴백
+      }
+    }
+  }
+  // PC 브라우저 등: 파일 다운로드
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function importData(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data;
+    try {
+      data = JSON.parse(reader.result);
+    } catch (e) {
+      alert('백업 파일을 읽을 수 없습니다. 올바른 백업 파일인지 확인해 주세요.');
+      return;
+    }
+    if (!data || typeof data !== 'object' || !Array.isArray(data.meds)) {
+      alert('이 파일은 복약 백업 파일이 아닌 것 같습니다.');
+      return;
+    }
+    const count = data.meds.length;
+    if (!confirm(`백업에서 약 ${count}개를 불러옵니다.\n현재 기기의 데이터는 백업 내용으로 덮어쓰여집니다. 계속할까요?`)) {
+      return;
+    }
+    state = { meds: data.meds, log: data.log || {} };
+    saveState();
+    render();
+    alert(`복원 완료! 약 ${count}개를 불러왔습니다.`);
+  };
+  reader.readAsText(file);
+}
+
+// 숨김 파일 입력: 가져오기 버튼이 누르면 파일 선택창을 띄움
+const importInput = document.getElementById('import-file');
+importInput.addEventListener('change', () => {
+  if (importInput.files && importInput.files[0]) {
+    importData(importInput.files[0]);
+  }
+  importInput.value = ''; // 같은 파일 다시 선택 가능하도록 초기화
+});
+
 /* ── 이벤트 위임 ───────────────────── */
 document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-action]');
@@ -473,6 +551,12 @@ document.addEventListener('click', (e) => {
       break;
     case 'add':
       openMedForm(null);
+      break;
+    case 'export-data':
+      exportData();
+      break;
+    case 'import-data':
+      importInput.click();
       break;
     case 'edit':
       openMedForm(state.meds.find(m => m.id === el.dataset.med));
