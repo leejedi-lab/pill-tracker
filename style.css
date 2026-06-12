@@ -171,6 +171,46 @@ main {
 .btn-sm.danger { color: var(--danger); }
 .btn-sm.confirm-state { background: var(--danger); color: #fff; }
 
+.sync-card { margin-top: 16px; }
+.sync-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.sync-title { font-weight: 700; font-size: 1rem; }
+.sync-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+.sync-badge.badge-off { background: var(--bg); color: var(--text-sub); }
+.sync-badge.badge-on { background: var(--primary-soft); color: var(--primary-dark); }
+.sync-badge.badge-wait { background: var(--warn-soft); color: #92400e; }
+.sync-badge.badge-err { background: var(--danger-soft); color: var(--danger); }
+
+.sync-code-box {
+  background: var(--bg);
+  border: 1.5px dashed var(--line);
+  border-radius: 12px;
+  padding: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9rem;
+  word-break: break-all;
+  text-align: center;
+  -webkit-user-select: all;
+  user-select: all;
+}
+
+.field textarea {
+  width: 100%;
+  padding: 13px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  outline: none;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+}
+.field textarea:focus { border-color: var(--primary); background: #fff; }
+
 .backup-card { margin-top: 16px; }
 .backup-title { font-weight: 700; font-size: 1rem; margin-bottom: 6px; }
 .backup-desc { font-size: 0.82rem; color: var(--text-sub); line-height: 1.6; margin-bottom: 14px; }

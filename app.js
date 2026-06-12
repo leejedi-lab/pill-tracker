@@ -39,8 +39,63 @@ function loadState() {
   } catch (e) { /* 손상된 데이터는 초기화 */ }
   return { meds: [], log: {} };
 }
+
+/* ── 동기화 설정 ───────────────────────
+   sync = { mode: 'local'|'cloud', config: {firebaseConfig}, code: '동기화코드' }
+   로컬 전용이 기본값. 클라우드는 사용자가 명시적으로 켤 때만 동작한다. */
+const SYNC_KEY = 'pill-tracker-sync';
+let sync = loadSync();
+let syncStatus = 'local';     // Cloud 모듈이 알려주는 현재 상태
+let applyingRemote = false;   // 원격 데이터 적용 중에는 다시 push하지 않도록
+let pushTimer = null;
+
+function loadSync() {
+  try { return JSON.parse(localStorage.getItem(SYNC_KEY)) || { mode: 'local' }; }
+  catch (e) { return { mode: 'local' }; }
+}
+function saveSync() {
+  localStorage.setItem(SYNC_KEY, JSON.stringify(sync));
+}
+
 function saveState() {
   localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  // 클라우드 모드면 변경분을 잠시 모았다가 한 번에 올린다 (디바운스)
+  if (sync.mode === 'cloud' && !applyingRemote && window.Cloud && Cloud.status !== 'local') {
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(() => Cloud.push(state), 400);
+  }
+}
+
+/* 다른 기기(또는 클라우드)에서 받은 데이터를 로컬에 반영 */
+function applyRemote(data) {
+  if (!data || !Array.isArray(data.meds)) return;
+  applyingRemote = true;
+  state = { meds: data.meds, log: data.log || {} };
+  localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  applyingRemote = false;
+  render();
+}
+
+/* Cloud 모듈 상태 변화 → 화면 갱신 */
+function onCloudStatus(s) {
+  syncStatus = s;
+  if (currentTab === 'meds') render();
+}
+
+/* 앱 시작 시 이미 클라우드로 설정돼 있으면 자동 연결 */
+async function resumeCloud() {
+  if (sync.mode !== 'cloud' || !sync.config || !sync.code || !window.Cloud) return;
+  const res = await Cloud.start(sync.config, sync.code, {
+    onStatus: onCloudStatus,
+    onRemote: applyRemote,
+  });
+  if (!res.ok) {
+    onCloudStatus('error');
+    return;
+  }
+  // 클라우드에 데이터가 있으면 그것을 받고, 없으면 이 기기 데이터를 올림
+  if (res.existed && res.data) applyRemote(res.data);
+  else Cloud.push(state);
 }
 
 /* ── 유틸 ─────────────────────────── */
@@ -249,6 +304,7 @@ function renderMeds() {
 
   view.innerHTML = html
     + `<button class="btn-primary" data-action="add">＋ 약 추가</button>`
+    + syncCardHtml()
     + `<div class="card backup-card">
          <div class="backup-title">데이터 백업</div>
          <div class="backup-desc">
@@ -539,6 +595,159 @@ importInput.addEventListener('change', () => {
   importInput.value = ''; // 같은 파일 다시 선택 가능하도록 초기화
 });
 
+/* ── 클라우드 동기화 UI ─────────────── */
+function syncCardHtml() {
+  if (sync.mode === 'cloud') {
+    const badge = {
+      connecting: ['연결 중…', 'badge-wait'],
+      synced:     ['동기화됨', 'badge-on'],
+      error:      ['연결 오류', 'badge-err'],
+      local:      ['대기 중', 'badge-wait'],
+    }[syncStatus] || ['동기화됨', 'badge-on'];
+    return `
+      <div class="card sync-card">
+        <div class="sync-head">
+          <span class="sync-title">☁️ 클라우드 동기화</span>
+          <span class="sync-badge ${badge[1]}">${badge[0]}</span>
+        </div>
+        <div class="backup-desc">
+          약을 체크할 때마다 클라우드에 자동 저장되고, 같은 동기화 코드를
+          넣은 다른 기기와 실시간으로 공유됩니다.
+        </div>
+        ${syncStatus === 'error' ? `<div class="alert-banner warn" style="margin:0 0 12px">
+          연결에 실패했습니다. 인터넷 연결과 Firebase 설정을 확인해 주세요.</div>` : ''}
+        <div class="backup-btns">
+          <button class="btn-sm" data-action="sync-showcode">📋 동기화 코드 보기</button>
+          <button class="btn-sm danger" data-action="sync-off">동기화 끄기</button>
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="card sync-card">
+      <div class="sync-head">
+        <span class="sync-title">☁️ 클라우드 동기화</span>
+        <span class="sync-badge badge-off">로컬 전용</span>
+      </div>
+      <div class="backup-desc">
+        지금은 이 기기에만 데이터가 저장됩니다. 클라우드 동기화를 켜면
+        기록할 때마다 자동 저장되고 여러 기기에서 같은 기록을 볼 수 있어요.
+        (무료 Firebase 계정이 필요합니다.)
+      </div>
+      <div class="backup-btns">
+        <button class="btn-sm" data-action="sync-setup">클라우드 동기화 설정</button>
+      </div>
+    </div>`;
+}
+
+// Firebase 설정 스니펫(또는 JSON)에서 설정 객체를 추출
+function parseFirebaseConfig(text) {
+  let t = (text || '').trim();
+  const m = t.match(/\{[\s\S]*\}/);
+  if (m) t = m[0];
+  let obj = null;
+  try { obj = JSON.parse(t); }
+  catch (e) {
+    try { obj = Function('return (' + t + ')')(); } // 따옴표 없는 키 대응
+    catch (e2) { return null; }
+  }
+  if (!obj || !obj.apiKey || !obj.projectId) return null;
+  return obj;
+}
+
+function openSyncModal() {
+  modalRoot.innerHTML = `
+    <div class="modal-overlay" data-action="modal-dismiss">
+      <div class="modal-sheet">
+        <h2>클라우드 동기화 설정</h2>
+        <div class="backup-desc" style="margin-bottom:16px">
+          Firebase 콘솔에서 복사한 <b>firebaseConfig</b> 값을 붙여넣으세요.
+          (설정 방법은 README의 안내를 참고하세요.)
+        </div>
+        <div class="field">
+          <label>Firebase 설정</label>
+          <textarea id="f-fbconfig" rows="6" placeholder='{ "apiKey": "...", "authDomain": "...", "projectId": "...", "appId": "..." }'></textarea>
+        </div>
+        <div class="field">
+          <label>다른 기기에서 쓰던 동기화 코드가 있나요? (없으면 비워두세요)</label>
+          <input type="text" id="f-synccode" placeholder="기존 코드 입력 (선택)">
+        </div>
+        <div class="modal-btns">
+          <button class="btn-cancel" data-action="modal-close">취소</button>
+          <button class="btn-save" data-action="sync-connect">연결</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function connectCloudFromModal() {
+  const config = parseFirebaseConfig(document.getElementById('f-fbconfig').value);
+  if (!config) {
+    alert('Firebase 설정을 읽을 수 없습니다. firebaseConfig 전체를 붙여넣었는지 확인해 주세요.');
+    return;
+  }
+  const existingCode = document.getElementById('f-synccode').value.trim();
+  const joining = !!existingCode;
+  if (joining &&
+      !confirm('기존 코드로 연결하면 이 기기의 현재 데이터는 클라우드 데이터로 대체됩니다. 계속할까요?')) {
+    return;
+  }
+
+  const code = existingCode || Cloud.randomCode();
+  closeModal();
+
+  const res = await Cloud.start(config, code, {
+    onStatus: onCloudStatus,
+    onRemote: applyRemote,
+  });
+  if (!res.ok) {
+    alert('연결 실패: ' + (res.error || '알 수 없는 오류') +
+          '\n\nFirebase 설정과 Firestore/익명 로그인 활성화 여부를 확인해 주세요.');
+    sync = { mode: 'local' };
+    saveSync();
+    render();
+    return;
+  }
+
+  sync = { mode: 'cloud', config, code };
+  saveSync();
+
+  if (joining) {
+    if (res.existed && res.data) applyRemote(res.data);  // 클라우드 데이터 받기
+  } else {
+    await Cloud.push(state);                              // 이 기기 데이터 올리기
+  }
+  render();
+  if (!joining) showSyncCode();  // 새로 만든 코드는 바로 보여줘서 다른 기기에 입력하게 함
+}
+
+function disableCloud() {
+  if (!confirm('클라우드 동기화를 끕니다. 이 기기의 데이터는 그대로 남아 있고, 더 이상 자동 저장되지 않습니다. 계속할까요?')) return;
+  if (window.Cloud) Cloud.stop();
+  sync = { mode: 'local' };
+  saveSync();
+  syncStatus = 'local';
+  render();
+}
+
+function showSyncCode() {
+  if (!sync.code) return;
+  modalRoot.innerHTML = `
+    <div class="modal-overlay" data-action="modal-dismiss">
+      <div class="modal-sheet">
+        <h2>동기화 코드</h2>
+        <div class="backup-desc" style="margin-bottom:12px">
+          다른 기기(아이패드 등)에서 같은 기록을 보려면, 그 기기의 클라우드
+          설정에서 아래 코드를 입력하세요. <b>이 코드는 비밀번호처럼 다루세요.</b>
+        </div>
+        <div class="sync-code-box" id="sync-code-text">${esc(sync.code)}</div>
+        <div class="modal-btns">
+          <button class="btn-cancel" data-action="modal-close">닫기</button>
+          <button class="btn-save" data-action="sync-copycode">코드 복사</button>
+        </div>
+      </div>
+    </div>`;
+}
+
 /* ── 이벤트 위임 ───────────────────── */
 document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-action]');
@@ -557,6 +766,25 @@ document.addEventListener('click', (e) => {
       break;
     case 'import-data':
       importInput.click();
+      break;
+    case 'sync-setup':
+      openSyncModal();
+      break;
+    case 'sync-connect':
+      connectCloudFromModal();
+      break;
+    case 'sync-off':
+      disableCloud();
+      break;
+    case 'sync-showcode':
+      showSyncCode();
+      break;
+    case 'sync-copycode':
+      if (navigator.clipboard && sync.code) {
+        navigator.clipboard.writeText(sync.code)
+          .then(() => alert('동기화 코드를 복사했습니다.'))
+          .catch(() => alert('복사에 실패했습니다. 코드를 직접 선택해 복사해 주세요.'));
+      }
       break;
     case 'edit':
       openMedForm(state.meds.find(m => m.id === el.dataset.med));
@@ -653,3 +881,6 @@ if (ui.modal) {
     else { ui.modal = null; saveUi(); }
   }
 }
+
+/* 클라우드 모드로 설정돼 있으면 자동 연결 시도 */
+resumeCloud();
