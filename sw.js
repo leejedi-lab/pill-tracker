@@ -1,6 +1,6 @@
 // 복약 체크 서비스 워커 — 앱 셸 캐싱(오프라인 지원)
 // 파일을 수정하면 CACHE_VERSION을 올려야 기존 사용자에게 새 버전이 배포됩니다.
-const CACHE_VERSION = 'pill-tracker-v1';
+const CACHE_VERSION = 'pill-tracker-v2';
 const SHELL = [
   './',
   './index.html',
