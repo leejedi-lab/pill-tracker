@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>복약 체크</title>
+  <meta name="description" content="매일 먹는 약을 기록하고 남은 수량을 관리하는 앱">
+  <meta name="theme-color" content="#10b981">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="복약 체크">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="app-header">
+    <h1 id="header-title">오늘의 복약</h1>
+    <div id="header-sub" class="header-sub"></div>
+  </header>
+
+  <main id="view"></main>
+
+  <nav class="tabbar">
+    <button class="tab-btn active" data-tab="today">
+      <span class="tab-icon">✅</span><span>오늘</span>
+    </button>
+    <button class="tab-btn" data-tab="meds">
+      <span class="tab-icon">💊</span><span>내 약</span>
+    </button>
+    <button class="tab-btn" data-tab="history">
+      <span class="tab-icon">📅</span><span>기록</span>
+    </button>
+  </nav>
+
+  <div id="modal-root"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
