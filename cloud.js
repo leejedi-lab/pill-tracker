@@ -10,6 +10,11 @@
  *
  * 데이터 구조: Firestore 문서  syncs/{동기화코드} = { meds, log, updatedAt }
  * 인증: 익명 로그인(Anonymous Auth). 동기화 코드가 기기 간 공유의 비밀키 역할.
+ *
+ * 보안: 이 모듈은 단일 문서 접근(getDoc/onSnapshot/setDoc)만 사용하고
+ * 컬렉션 조회(list)는 쓰지 않는다. Firestore 보안 규칙에서 list를 막으면
+ * (allow get, write / allow list: if false) 코드를 모르는 사람은 문서를
+ * 나열·검색조차 할 수 없어 32자리 코드가 진짜 비밀키가 된다. (README 참고)
  */
 window.Cloud = (() => {
   const SDK = 'https://www.gstatic.com/firebasejs/10.12.0';
