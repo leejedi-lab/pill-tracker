@@ -124,6 +124,14 @@ main {
 .dose-meta { font-size: 0.82rem; color: var(--text-sub); margin-top: 2px; }
 .dose-meta .low { color: var(--danger); font-weight: 700; }
 
+.app-version {
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--text-sub);
+  opacity: 0.7;
+  padding: 20px 0 8px;
+}
+
 .empty-state {
   text-align: center;
   padding: 56px 20px;

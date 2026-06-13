@@ -11,6 +11,11 @@ const UNITS = ['정', '캡슐', '포', 'ml'];
 const STORE_KEY = 'pill-tracker-v1';
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
+/* 앱 버전 / 배포일 — 새로 배포할 때마다 함께 갱신하세요.
+   (sw.js의 CACHE_VERSION도 같이 올려야 기기에 새 버전이 반영됩니다.) */
+const APP_VERSION = '1.0.0';
+const BUILD_DATE = '2026-06-13';
+
 /* ── 상태 ─────────────────────────── */
 // state.meds: [{ id, name, dose, unit, slots:[], stock, lowDays, created }]
 // state.log:  { 'YYYY-MM-DD': { 'medId|slotId': timestamp } }
@@ -208,6 +213,9 @@ function render() {
   if (currentTab === 'today') renderToday();
   else if (currentTab === 'meds') renderMeds();
   else renderHistory();
+  // 화면 하단에 버전·배포일 표시
+  view.insertAdjacentHTML('beforeend',
+    `<div class="app-version">복약 체크 v${APP_VERSION} · ${BUILD_DATE} 배포</div>`);
 }
 
 /* ── 렌더링: 오늘 탭 ───────────────── */
