@@ -159,7 +159,7 @@ main {
 .stock-num small { font-weight: 500; color: var(--text-sub); font-size: 0.8rem; }
 .stock-num.low { color: var(--danger); }
 
-.med-actions { display: flex; gap: 8px; }
+.med-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 .btn-sm {
   font-size: 0.82rem;
   font-weight: 600;
@@ -170,6 +170,40 @@ main {
 }
 .btn-sm.danger { color: var(--danger); }
 .btn-sm.confirm-state { background: var(--danger); color: #fff; }
+.btn-sm.activate { background: var(--primary-soft); color: var(--primary-dark); }
+
+/* 비활성/만료된 약 카드 */
+.med-card.inactive { opacity: 0.62; }
+.chip.chip-paused { background: #e5e7eb; color: #6b7280; }
+.chip.chip-ended { background: var(--warn-soft); color: #92400e; }
+
+/* 복용 기간 빠른 선택 칩 */
+.period-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip-btn {
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1.5px solid var(--line);
+  color: var(--text-sub);
+}
+.field input[type="date"] {
+  width: 100%;
+  padding: 13px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  outline: none;
+}
+#period-detail input[type="date"] {
+  width: 100%;
+  padding: 13px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  outline: none;
+}
 
 .sync-card { margin-top: 16px; }
 .sync-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }

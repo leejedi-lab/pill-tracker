@@ -111,6 +111,10 @@ function dateKey(d) {
 function startOfMonth(d) {
   return new Date(d.getFullYear(), d.getMonth(), 1);
 }
+function shiftDate(baseKey, n) {
+  const [y, m, d] = baseKey.split('-').map(Number);
+  return dateKey(new Date(y, m - 1, d + n));
+}
 function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -130,6 +134,24 @@ function daysLeft(med) {
 }
 function isLow(med) {
   return daysLeft(med) <= (med.lowDays ?? 3);
+}
+
+/* 약의 현재 상태: 'active'(복용 중) | 'paused'(수동 비활성) | 'ended'(기간 만료) */
+function medStatus(med) {
+  if (med.active === false) return 'paused';
+  if (med.endDate && dateKey(new Date()) > med.endDate) return 'ended';
+  return 'active';
+}
+
+/* 특정 날짜(dk)에 이 약이 복용 대상인지 — 오늘 목록·기록·달력 계산에 사용.
+   - 등록일 이전이거나 종료일 이후면 대상 아님
+   - 오늘/미래 날짜는 수동 비활성(active=false)이면 제외 (과거 기록은 그대로 유지) */
+function isExpectedOn(med, dk) {
+  if (!med.slots || med.slots.length === 0) return false;
+  if ((med.created || '0000-00-00') > dk) return false;
+  if (med.endDate && dk > med.endDate) return false;
+  if (dk >= dateKey(new Date()) && med.active === false) return false;
+  return true;
 }
 function fmtDateKo(dk) {
   const [y, m, d] = dk.split('-').map(Number);
@@ -158,7 +180,7 @@ function toggleDose(medId, slotId) {
 /* ── 날짜별 복용 현황 ──────────────── */
 function dayStatus(dk) {
   const todayK = dateKey(new Date());
-  const meds = state.meds.filter(m => (m.created || '0000-00-00') <= dk);
+  const meds = state.meds.filter(m => isExpectedOn(m, dk));
   let expected = 0, taken = 0;
   const dayLog = state.log[dk] || {};
   for (const m of meds) {
@@ -206,8 +228,21 @@ function renderToday() {
 
   const tk = dateKey(now);
   const dayLog = state.log[tk] || {};
+
+  // 오늘 복용 대상(활성 + 기간 내) 약만 집계
+  const todayMeds = state.meds.filter(m => isExpectedOn(m, tk));
+  if (todayMeds.length === 0) {
+    view.innerHTML = `
+      <div class="empty-state">
+        <span class="emoji">🌙</span>
+        오늘 복용 예정인 약이 없어요.<br>
+        <b>내 약</b> 탭에서 약을 추가하거나 활성화해 주세요.
+      </div>`;
+    return;
+  }
+
   let expected = 0, taken = 0;
-  for (const m of state.meds) {
+  for (const m of todayMeds) {
     for (const s of m.slots) {
       expected++;
       if (dayLog[`${m.id}|${s}`]) taken++;
@@ -215,8 +250,8 @@ function renderToday() {
   }
   const pct = expected ? Math.round((taken / expected) * 100) : 0;
 
-  // 재고 부족 경고 배너
-  const lowMeds = state.meds.filter(isLow);
+  // 재고 부족 경고 배너 (복용 중인 약만)
+  const lowMeds = todayMeds.filter(isLow);
   const banner = lowMeds.length
     ? `<div class="alert-banner warn">⚠️ <b>약이 얼마 남지 않았어요:</b> ${
         lowMeds.map(m => `${esc(m.name)} (${daysLeft(m)}일치)`).join(', ')
@@ -226,7 +261,7 @@ function renderToday() {
   // 시간대별 복용 카드
   let slotsHtml = '';
   for (const slot of SLOTS) {
-    const meds = state.meds.filter(m => m.slots.includes(slot.id));
+    const meds = todayMeds.filter(m => m.slots.includes(slot.id));
     if (meds.length === 0) continue;
     slotsHtml += `<div class="slot-title">${slot.icon} ${slot.label}</div>`;
     for (const m of meds) {
@@ -269,28 +304,55 @@ function renderMeds() {
   for (const m of state.meds) {
     const left = daysLeft(m);
     const low = isLow(m);
+    const status = medStatus(m);
+
+    // 상태 칩
+    const statusChip =
+      status === 'paused' ? `<span class="chip chip-paused">비활성</span>` :
+      status === 'ended'  ? `<span class="chip chip-ended">기간 만료</span>` : '';
+    // 복용 기간 칩
+    const periodChip = m.endDate
+      ? `<span class="chip">~${m.endDate.slice(5).replace('-', '/')}까지</span>` : '';
+
+    // 상태별 액션 버튼
+    let actions = '';
+    if (status === 'active') {
+      actions = `
+        <button class="btn-sm" data-action="refill" data-med="${m.id}">재고 추가</button>
+        <button class="btn-sm" data-action="edit" data-med="${m.id}">수정</button>
+        <button class="btn-sm" data-action="set-active" data-med="${m.id}" data-val="0">비활성화</button>
+        <button class="btn-sm danger" data-action="delete" data-med="${m.id}">삭제</button>`;
+    } else if (status === 'paused') {
+      actions = `
+        <button class="btn-sm" data-action="edit" data-med="${m.id}">수정</button>
+        <button class="btn-sm activate" data-action="set-active" data-med="${m.id}" data-val="1">활성화</button>
+        <button class="btn-sm danger" data-action="delete" data-med="${m.id}">삭제</button>`;
+    } else { // ended
+      actions = `
+        <button class="btn-sm" data-action="edit" data-med="${m.id}">수정</button>
+        <button class="btn-sm activate" data-action="restart-med" data-med="${m.id}">다시 시작</button>
+        <button class="btn-sm danger" data-action="delete" data-med="${m.id}">삭제</button>`;
+    }
+
     html += `
-      <div class="card med-card">
+      <div class="card med-card${status !== 'active' ? ' inactive' : ''}">
         <div class="med-top">
           <div>
-            <div class="med-name">${esc(m.name)}</div>
+            <div class="med-name">${esc(m.name)} ${statusChip}</div>
             <div class="med-chips">
               ${m.slots.map(s => `<span class="chip primary">${slotLabel(s)}</span>`).join('')}
               <span class="chip">1회 ${m.dose}${esc(m.unit)}</span>
+              ${periodChip}
             </div>
           </div>
         </div>
         <div class="stock-row">
-          <div class="stock-num ${low ? 'low' : ''}">
+          <div class="stock-num ${low && status === 'active' ? 'low' : ''}">
             ${m.stock}${esc(m.unit)} 남음
             <small>(약 ${left === Infinity ? '-' : left + '일치'})</small>
           </div>
-          <div class="med-actions">
-            <button class="btn-sm" data-action="refill" data-med="${m.id}">재고 추가</button>
-            <button class="btn-sm" data-action="edit" data-med="${m.id}">수정</button>
-            <button class="btn-sm danger" data-action="delete" data-med="${m.id}">삭제</button>
-          </div>
         </div>
+        <div class="med-actions">${actions}</div>
       </div>`;
   }
 
@@ -345,7 +407,7 @@ function renderHistory() {
   }
 
   // 선택한 날짜 상세
-  const selMeds = state.meds.filter(m => (m.created || '0000-00-00') <= selectedDate);
+  const selMeds = state.meds.filter(m => isExpectedOn(m, selectedDate));
   const selLog = state.log[selectedDate] || {};
   let detail = '';
   if (selMeds.length === 0) {
@@ -435,6 +497,24 @@ function openMedForm(med, draft) {
             <input type="number" id="f-lowdays" value="${m.lowDays ?? 3}" min="1" inputmode="numeric">
           </div>
         </div>
+        <div class="field">
+          <label>복용 기간</label>
+          <div class="slot-picker">
+            <button type="button" class="slot-opt period-opt${m.endDate ? '' : ' on'}"
+                    data-action="period-mode" data-mode="ongoing">계속 복용</button>
+            <button type="button" class="slot-opt period-opt${m.endDate ? ' on' : ''}"
+                    data-action="period-mode" data-mode="fixed">기간 지정</button>
+          </div>
+          <div id="period-detail" style="margin-top:10px;${m.endDate ? '' : 'display:none'}">
+            <div class="period-chips">
+              ${[3, 5, 7, 14, 30].map(n =>
+                `<button type="button" class="chip-btn" data-action="period-days" data-days="${n}">${n}일</button>`
+              ).join('')}
+            </div>
+            <label style="display:block;font-size:0.85rem;font-weight:700;color:var(--text-sub);margin:10px 0 6px">복용 종료일 (이 날까지 복용)</label>
+            <input type="date" id="f-enddate" value="${m.endDate || ''}">
+          </div>
+        </div>
         <div class="modal-btns">
           <button class="btn-cancel" data-action="modal-close">취소</button>
           <button class="btn-save" data-action="med-save" data-med="${isEdit ? med.id : ''}">저장</button>
@@ -473,13 +553,16 @@ function captureMedDraft() {
   if (!ui.modal || ui.modal.kind !== 'med') return;
   const get = id => document.getElementById(id);
   if (!get('f-name')) return;
+  const fixed = modalRoot.querySelector('.period-opt.on[data-mode="fixed"]');
+  const endInput = get('f-enddate');
   ui.modal.draft = {
     name: get('f-name').value,
     dose: parseInt(get('f-dose').value, 10) || 1,
     unit: get('f-unit').value,
     stock: parseInt(get('f-stock').value, 10) || 0,
     lowDays: parseInt(get('f-lowdays').value, 10) || 3,
-    slots: [...modalRoot.querySelectorAll('.slot-opt.on')].map(b => b.dataset.slot),
+    slots: [...modalRoot.querySelectorAll('.slot-opt.on:not(.period-opt)')].map(b => b.dataset.slot),
+    endDate: (fixed && endInput && endInput.value) ? endInput.value : null,
   };
   saveUi();
 }
@@ -490,17 +573,21 @@ function saveMedForm(medId) {
   const unit = document.getElementById('f-unit').value;
   const stock = Math.max(0, parseInt(document.getElementById('f-stock').value, 10) || 0);
   const lowDays = Math.max(1, parseInt(document.getElementById('f-lowdays').value, 10) || 3);
-  const slots = [...modalRoot.querySelectorAll('.slot-opt.on')].map(b => b.dataset.slot);
+  const slots = [...modalRoot.querySelectorAll('.slot-opt.on:not(.period-opt)')].map(b => b.dataset.slot);
+  const fixed = modalRoot.querySelector('.period-opt.on[data-mode="fixed"]');
+  const endInput = document.getElementById('f-enddate');
+  const endDate = (fixed && endInput && endInput.value) ? endInput.value : null;
 
   if (!name) { document.getElementById('f-name').focus(); return; }
   if (slots.length === 0) return;
 
   if (medId) {
     const med = state.meds.find(m => m.id === medId);
-    Object.assign(med, { name, dose, unit, stock, lowDays, slots });
+    Object.assign(med, { name, dose, unit, stock, lowDays, slots, endDate });
   } else {
     state.meds.push({
-      id: uid(), name, dose, unit, stock, lowDays, slots,
+      id: uid(), name, dose, unit, stock, lowDays, slots, endDate,
+      active: true,
       created: dateKey(new Date()),
     });
   }
@@ -817,6 +904,36 @@ document.addEventListener('click', (e) => {
       el.classList.toggle('on');
       captureMedDraft();
       break;
+    case 'period-mode': {
+      modalRoot.querySelectorAll('.period-opt').forEach(b => b.classList.remove('on'));
+      el.classList.add('on');
+      const detail = document.getElementById('period-detail');
+      const endInput = document.getElementById('f-enddate');
+      if (el.dataset.mode === 'fixed') {
+        detail.style.display = '';
+        if (!endInput.value) endInput.value = shiftDate(dateKey(new Date()), 4); // 기본 5일치
+      } else {
+        detail.style.display = 'none';
+      }
+      captureMedDraft();
+      break;
+    }
+    case 'period-days': {
+      const n = parseInt(el.dataset.days, 10) || 1;
+      document.getElementById('f-enddate').value = shiftDate(dateKey(new Date()), n - 1);
+      captureMedDraft();
+      break;
+    }
+    case 'set-active': {
+      const med = state.meds.find(m => m.id === el.dataset.med);
+      if (med) { med.active = el.dataset.val === '1'; saveState(); render(); }
+      break;
+    }
+    case 'restart-med': {
+      const med = state.meds.find(m => m.id === el.dataset.med);
+      if (med) { med.active = true; med.endDate = null; saveState(); render(); }
+      break;
+    }
     case 'cal-prev':
       calCursor = new Date(calCursor.getFullYear(), calCursor.getMonth() - 1, 1);
       render();
