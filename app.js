@@ -13,8 +13,8 @@ const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
 /* 앱 버전 / 배포일 — 새로 배포할 때마다 함께 갱신하세요.
    (sw.js의 CACHE_VERSION도 같이 올려야 기기에 새 버전이 반영됩니다.) */
-const APP_VERSION = '1.0.0';
-const BUILD_DATE = '2026-06-13';
+const APP_VERSION = '1.1.0';
+const BUILD_DATE = '2026-06-22';
 
 /* ── 상태 ─────────────────────────── */
 // state.meds: [{ id, name, dose, unit, slots:[], stock, lowDays, created }]
@@ -164,18 +164,21 @@ function fmtDateKo(dk) {
   return `${m}월 ${d}일 (${wd})`;
 }
 
-/* ── 복용 체크 토글 ────────────────── */
-function toggleDose(medId, slotId) {
+/* ── 복용 체크 토글 ──────────────────
+   dk 생략 시 오늘. 기록 탭에서 지난 날짜를 dk로 넘기면 소급 기록.
+   소급 기록도 재고를 동일하게 차감/복구한다(그날 실제로 약을 먹었으면
+   재고가 줄어 있어야 맞으므로). */
+function toggleDose(medId, slotId, dk) {
   const med = state.meds.find(m => m.id === medId);
   if (!med) return;
-  const tk = dateKey(new Date());
-  if (!state.log[tk]) state.log[tk] = {};
+  dk = dk || dateKey(new Date());
+  if (!state.log[dk]) state.log[dk] = {};
   const k = `${medId}|${slotId}`;
-  if (state.log[tk][k]) {
-    delete state.log[tk][k];
+  if (state.log[dk][k]) {
+    delete state.log[dk][k];
     med.stock += med.dose;            // 체크 해제 → 재고 복구
   } else {
-    state.log[tk][k] = Date.now();
+    state.log[dk][k] = Date.now();
     med.stock = Math.max(0, med.stock - med.dose);  // 체크 → 재고 차감
   }
   saveState();
@@ -426,10 +429,11 @@ function renderHistory() {
         const took = !!selLog[`${m.id}|${s}`];
         const future = selectedDate > todayK;
         detail += `
-          <div class="detail-row">
+          <div class="detail-row${future ? '' : ' tappable'}"
+               ${future ? '' : `data-action="toggle-history" data-med="${m.id}" data-slot="${s}"`}>
             <span>${esc(m.name)} <small style="color:var(--text-sub)">· ${slotLabel(s)}</small></span>
             <span class="detail-status ${future ? 'na' : took ? 'ok' : 'no'}">
-              ${future ? '예정' : took ? '복용함 ✓' : '안 먹음'}
+              ${future ? '예정' : took ? '복용함 ✓' : '안 먹음 · 탭하여 기록'}
             </span>
           </div>`;
       }
@@ -452,6 +456,8 @@ function renderHistory() {
     </div>
     <div class="card day-detail">
       <h3>${fmtDateKo(selectedDate)}</h3>
+      ${selMeds.length && selectedDate <= todayK
+        ? `<p class="detail-hint">각 항목을 탭하면 복용 여부를 바꿀 수 있어요.</p>` : ''}
       ${detail}
     </div>`;
 }
@@ -852,6 +858,9 @@ document.addEventListener('click', (e) => {
   switch (action) {
     case 'toggle':
       toggleDose(el.dataset.med, el.dataset.slot);
+      break;
+    case 'toggle-history':
+      toggleDose(el.dataset.med, el.dataset.slot, selectedDate);
       break;
     case 'add':
       openMedForm(null);

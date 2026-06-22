@@ -333,16 +333,21 @@ main {
 .cal-legend span { display: flex; align-items: center; gap: 4px; }
 
 .day-detail { margin-top: 14px; }
-.day-detail h3 { font-size: 0.95rem; font-weight: 700; margin: 0 4px 8px; color: var(--text-sub); }
+.day-detail h3 { font-size: 0.95rem; font-weight: 700; margin: 0 4px 4px; color: var(--text-sub); }
+.detail-hint { font-size: 0.78rem; color: var(--text-sub); margin: 0 4px 8px; opacity: 0.85; }
 .detail-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 0;
+  padding: 12px 8px;
+  margin: 0 -8px;
   border-bottom: 1px solid var(--line);
   font-size: 0.92rem;
+  border-radius: 8px;
 }
 .detail-row:last-child { border-bottom: none; }
+.detail-row.tappable { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.detail-row.tappable:active { background: var(--bg); }
 .detail-status { font-weight: 700; font-size: 0.85rem; }
 .detail-status.ok { color: var(--primary-dark); }
 .detail-status.no { color: var(--danger); }
