@@ -2,6 +2,10 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
+  <!-- 콘텐츠 보안 정책: 인라인 스크립트·eval 차단(XSS 2중 방어).
+       gstatic/googleapis/firebaseapp은 클라우드 동기화(선택) 때만 쓰인다.
+       GitHub Pages는 헤더를 못 바꾸므로 meta로 지정 (frame-ancestors는 meta에서 무시됨) -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://*.googleapis.com https://www.gstatic.com; frame-src https://*.firebaseapp.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <title>복약 체크</title>
   <meta name="description" content="매일 먹는 약을 기록하고 남은 수량을 관리하는 앱">

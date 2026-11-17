@@ -46,6 +46,18 @@ state = {
 - 상태가 바뀌면 `render()`가 현재 탭 전체를 문자열 HTML로 다시 그립니다. 가상 DOM·부분 갱신 없음. 새 UI를 붙일 때도 이 방식을 따르세요.
 - 사용자 입력은 `document`에 건 **단일 클릭 위임**(`app.js:853~`)에서 `data-action` 속성으로 분기합니다. 개별 요소에 `addEventListener`를 달지 마세요 — 다시 그리는 순간 사라집니다.
 - 사용자 입력값을 HTML에 넣을 때는 반드시 `esc()`를 거칩니다.
+- 템플릿은 숫자·id·날짜·slots를 이스케이프 없이 넣습니다. 이게 안전한 근거는 **외부에서 들어오는 모든 데이터가 `normalizeState()`/`normalizeMed()`를 거친다**는 점입니다(`loadState`·`importData`·`applyRemote`·모달 초안 복원). 새 입력 경로를 만들면 반드시 여기를 거치게 하세요.
+- 정규화용 상수(`DATE_RE`·`ID_RE`·`SLOT_IDS`)는 파일 맨 위 상수 섹션에 둡니다. `loadState()`가 선언 직후 실행되므로 아래쪽에 `const`로 두면 TDZ 오류가 나고, try/catch에 묻혀 **데이터가 빈 상태로 초기화**됩니다.
+
+### 콘텐츠 보안 정책(CSP)
+
+`index.html`의 `<meta http-equiv="Content-Security-Policy">`가 인라인 스크립트와 `eval`/`Function`을 차단합니다. 그래서 다음은 쓰면 안 됩니다.
+
+- `onclick=` 같은 인라인 이벤트 핸들러, `<script>` 인라인 블록 → `data-action` 위임을 쓰세요
+- `eval`, `new Function`, 문자열 `setTimeout`
+- 새 외부 도메인 → 필요하면 CSP의 해당 지시어에 추가
+
+인라인 `style=` 속성은 허용돼 있습니다(`style-src 'unsafe-inline'`). Firebase용 도메인(`gstatic`·`googleapis`·`firebaseapp`)은 클라우드 동기화가 실기기에서 검증되지 않아 함께 검증되지 않은 상태입니다.
 
 ### 클라우드 동기화 계약
 
@@ -58,9 +70,9 @@ state = {
 
 코드를 고치고 push하기 전에 **세 값을 함께 올립니다.** 하나라도 빠지면 이미 설치한 아이폰에 새 버전이 반영되지 않습니다.
 
-1. `sw.js` — `CACHE_VERSION` (현재 `pill-tracker-v6`)
-2. `app.js` — `APP_VERSION` (현재 `1.1.0`)
-3. `app.js` — `BUILD_DATE` (현재 `2026-06-22`)
+1. `sw.js` — `CACHE_VERSION` (현재 `pill-tracker-v7`)
+2. `app.js` — `APP_VERSION` (현재 `1.1.1`)
+3. `app.js` — `BUILD_DATE` (현재 `2026-11-18`)
 
 버전은 앱 모든 화면 하단에 표시되므로, 기기에서 반영 여부를 눈으로 확인할 수 있습니다.
 

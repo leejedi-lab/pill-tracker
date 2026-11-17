@@ -10,11 +10,15 @@ const SLOTS = [
 const UNITS = ['정', '캡슐', '포', 'ml'];
 const STORE_KEY = 'pill-tracker-v1';
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+// 외부 데이터 정규화(normalizeState)용 — loadState()보다 먼저 선언돼 있어야 한다
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
+const SLOT_IDS = SLOTS.map(s => s.id);
 
 /* 앱 버전 / 배포일 — 새로 배포할 때마다 함께 갱신하세요.
    (sw.js의 CACHE_VERSION도 같이 올려야 기기에 새 버전이 반영됩니다.) */
-const APP_VERSION = '1.1.0';
-const BUILD_DATE = '2026-06-22';
+const APP_VERSION = '1.1.1';
+const BUILD_DATE = '2026-11-18';
 
 /* ── 상태 ─────────────────────────── */
 // state.meds: [{ id, name, dose, unit, slots:[], stock, lowDays, created }]
@@ -40,7 +44,10 @@ let selectedDate = dateKey(new Date());
 function loadState() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const norm = normalizeState(JSON.parse(raw));
+      if (norm) return norm;
+    }
   } catch (e) { /* 손상된 데이터는 초기화 */ }
   return { meds: [], log: {} };
 }
@@ -73,9 +80,10 @@ function saveState() {
 
 /* 다른 기기(또는 클라우드)에서 받은 데이터를 로컬에 반영 */
 function applyRemote(data) {
-  if (!data || !Array.isArray(data.meds)) return;
+  const norm = normalizeState(data);
+  if (!norm) return;
   applyingRemote = true;
-  state = { meds: data.meds, log: data.log || {} };
+  state = norm;
   localStorage.setItem(STORE_KEY, JSON.stringify(state));
   applyingRemote = false;
   render();
@@ -127,7 +135,56 @@ function esc(s) {
 }
 function slotLabel(id) {
   const s = SLOTS.find(s => s.id === id);
-  return s ? s.label : id;
+  return s ? s.label : esc(id);
+}
+
+/* ── 외부 데이터 정규화 ─────────────────
+   localStorage·백업 파일·클라우드에서 들어오는 데이터는 형식을 믿을 수 없다.
+   화면 템플릿은 숫자·id·날짜를 이스케이프 없이 HTML에 넣으므로, 들어오는
+   모든 경로(loadState / importData / applyRemote / 모달 초안)에서 여기를
+   거쳐 타입과 형식을 강제한다. 이 함수를 우회하는 입력 경로를 만들지 말 것.
+   (사용하는 정규식 상수는 파일 맨 위 상수 섹션에 있다 — loadState()가
+    선언 직후 실행되므로 여기서 const로 두면 TDZ 오류로 데이터가 초기화된다.) */
+function toInt(v, min, max, fallback) {
+  const n = Math.floor(Number(v));
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+}
+function normalizeMed(m) {
+  if (!m || typeof m !== 'object') return null;
+  const slots = Array.isArray(m.slots)
+    ? [...new Set(m.slots.filter(s => SLOT_IDS.includes(s)))] : [];
+  return {
+    id: (typeof m.id === 'string' && ID_RE.test(m.id)) ? m.id : uid(),
+    name: String(m.name ?? '').slice(0, 100),
+    dose: toInt(m.dose, 1, 100000, 1),
+    unit: String(m.unit ?? '정').slice(0, 20),
+    slots,
+    stock: toInt(m.stock, 0, 10000000, 0),
+    lowDays: toInt(m.lowDays, 1, 3650, 3),
+    endDate: (typeof m.endDate === 'string' && DATE_RE.test(m.endDate)) ? m.endDate : null,
+    active: m.active !== false,
+    created: (typeof m.created === 'string' && DATE_RE.test(m.created)) ? m.created : null,
+  };
+}
+// 형식이 맞지 않으면 null (호출 측에서 거부/초기화 처리)
+function normalizeState(data) {
+  if (!data || typeof data !== 'object' || !Array.isArray(data.meds)) return null;
+  const meds = data.meds.map(normalizeMed).filter(Boolean);
+  const log = {};
+  if (data.log && typeof data.log === 'object') {
+    for (const [dk, day] of Object.entries(data.log)) {
+      if (!DATE_RE.test(dk) || !day || typeof day !== 'object') continue;
+      const clean = {};
+      for (const [k, ts] of Object.entries(day)) {
+        const [mid, sid] = k.split('|');
+        if (ID_RE.test(mid || '') && SLOT_IDS.includes(sid) && Number.isFinite(Number(ts)) && ts) {
+          clean[k] = Number(ts);
+        }
+      }
+      if (Object.keys(clean).length) log[dk] = clean;
+    }
+  }
+  return { meds, log };
 }
 function dailyUse(med) {
   return med.dose * med.slots.length;
@@ -467,7 +524,9 @@ const modalRoot = document.getElementById('modal-root');
 
 function openMedForm(med, draft) {
   const isEdit = !!med;
-  const m = draft || med || { name: '', dose: 1, unit: '정', slots: ['morning'], stock: 30, lowDays: 3 };
+  // sessionStorage에서 복원한 초안도 외부 데이터로 취급해 정규화
+  const m = (draft && normalizeMed(draft)) || med
+    || { name: '', dose: 1, unit: '정', slots: ['morning'], stock: 30, lowDays: 3 };
 
   ui.modal = { kind: 'med', medId: isEdit ? med.id : null, draft: { ...m } };
   saveUi();
@@ -671,15 +730,16 @@ function importData(file) {
       alert('백업 파일을 읽을 수 없습니다. 올바른 백업 파일인지 확인해 주세요.');
       return;
     }
-    if (!data || typeof data !== 'object' || !Array.isArray(data.meds)) {
+    const norm = normalizeState(data);
+    if (!norm) {
       alert('이 파일은 복약 백업 파일이 아닌 것 같습니다.');
       return;
     }
-    const count = data.meds.length;
+    const count = norm.meds.length;
     if (!confirm(`백업에서 약 ${count}개를 불러옵니다.\n현재 기기의 데이터는 백업 내용으로 덮어쓰여집니다. 계속할까요?`)) {
       return;
     }
-    state = { meds: data.meds, log: data.log || {} };
+    state = norm;
     saveState();
     render();
     alert(`복원 완료! 약 ${count}개를 불러왔습니다.`);
@@ -740,7 +800,11 @@ function syncCardHtml() {
     </div>`;
 }
 
-// Firebase 설정 스니펫(또는 JSON)에서 설정 객체를 추출
+// Firebase 설정 스니펫(또는 JSON)에서 설정 객체를 추출.
+// 붙여넣은 텍스트를 코드로 실행하지 않는다(eval/Function 금지 — CSP에서도 막힘).
+// 콘솔이 주는 JS 객체 리터럴 형태는 텍스트 변환으로 JSON에 맞춘 뒤 파싱한다.
+const FB_KEYS = ['apiKey', 'authDomain', 'projectId', 'storageBucket',
+  'messagingSenderId', 'appId', 'measurementId', 'databaseURL'];
 function parseFirebaseConfig(text) {
   let t = (text || '').trim();
   const m = t.match(/\{[\s\S]*\}/);
@@ -748,11 +812,22 @@ function parseFirebaseConfig(text) {
   let obj = null;
   try { obj = JSON.parse(t); }
   catch (e) {
-    try { obj = Function('return (' + t + ')')(); } // 따옴표 없는 키 대응
+    const json = t
+      .replace(/^\s*\/\/.*$/gm, '')                              // 줄 단위 주석
+      .replace(/'([^'\\]*)'/g, '"$1"')                           // 'x' → "x"
+      .replace(/([{,]\s*)([A-Za-z_$][\w$]*)\s*:/g, '$1"$2":')    // 따옴표 없는 키
+      .replace(/,\s*}/g, '}');                                   // 끝 쉼표
+    try { obj = JSON.parse(json); }
     catch (e2) { return null; }
   }
-  if (!obj || !obj.apiKey || !obj.projectId) return null;
-  return obj;
+  if (!obj || typeof obj !== 'object') return null;
+  // 알려진 키의 문자열 값만 남긴다
+  const config = {};
+  for (const k of FB_KEYS) {
+    if (typeof obj[k] === 'string' && obj[k]) config[k] = obj[k];
+  }
+  if (!config.apiKey || !config.projectId) return null;
+  return config;
 }
 
 function openSyncModal() {
@@ -786,7 +861,11 @@ async function connectCloudFromModal() {
     alert('Firebase 설정을 읽을 수 없습니다. firebaseConfig 전체를 붙여넣었는지 확인해 주세요.');
     return;
   }
-  const existingCode = document.getElementById('f-synccode').value.trim();
+  const existingCode = document.getElementById('f-synccode').value.trim().toLowerCase();
+  if (existingCode && !/^[0-9a-f]{32}$/.test(existingCode)) {
+    alert('동기화 코드 형식이 올바르지 않습니다. 32자리 코드를 그대로 붙여넣어 주세요.');
+    return;
+  }
   const joining = !!existingCode;
   if (joining &&
       !confirm('기존 코드로 연결하면 이 기기의 현재 데이터는 클라우드 데이터로 대체됩니다. 계속할까요?')) {
